@@ -1,9 +1,9 @@
 import Graph from '../Graph';
 import Module from '../Module';
 import {
-	Asset,
 	DecodedSourceMapOrMissing,
 	EmittedChunk,
+	EmittedFile,
 	Plugin,
 	PluginCache,
 	PluginContext,
@@ -30,8 +30,8 @@ export default function transform(
 	const originalCode = source.code;
 	let ast = source.ast;
 	let transformDependencies: string[];
-	const emittedAssets: Asset[] = [];
 	const emittedChunks: EmittedChunk[] = [];
+	const emittedFiles: EmittedFile[] = [];
 	let customTransformCache = false;
 	let moduleSideEffects: boolean | null = null;
 	let trackedPluginCache: { cache: PluginCache; used: boolean };
@@ -55,7 +55,7 @@ export default function transform(
 			}
 		} else {
 			// assets/chunks emitted by a transform hook need to be emitted again if the hook is skipped
-			if (emittedAssets.length) module.transformAssets = emittedAssets;
+			if (emittedFiles.length) module.transformFiles = emittedFiles;
 			if (emittedChunks.length) module.transformChunks = emittedChunks;
 
 			if (result && typeof result === 'object' && Array.isArray(result.dependencies)) {
@@ -129,16 +129,19 @@ export default function transform(
 						return pluginContext.error(err);
 					},
 					emitAsset(name: string, source?: string | Buffer) {
-						emittedAssets.push({
-							fileName: undefined as any,
-							name,
-							source: source as any
-						});
-						return graph.pluginDriver.emitFile({ type: 'asset', name, source });
+						const emittedFile = { type: 'asset' as 'asset', name, source };
+						emittedFiles.push({ ...emittedFile });
+						return graph.pluginDriver.emitFile(emittedFile);
 					},
 					emitChunk(id, options) {
 						emittedChunks.push({ id, options });
 						return graph.pluginDriver.emitChunk(id, options);
+					},
+					emitFile(emittedFile: EmittedFile) {
+						// TODO Lukas test that we are creating a copy or in the future, do not mutate emitted files
+						// or prevent setAssetSource during build?
+						emittedFiles.push({ ...emittedFile });
+						return graph.pluginDriver.emitFile(emittedFile);
 					},
 					// TODO Lukas this needs to be repeated as well
 					addWatchFile(id: string) {
@@ -152,7 +155,7 @@ export default function transform(
 							try {
 								this.error({
 									code: 'INVALID_SETASSETSOURCE',
-									message: `setAssetSource cannot be called in transform for caching reasons. Use emitAsset with a source, or call setAssetSource in another hook.`
+									message: `setAssetSource cannot be called in transform for caching reasons. Use emitFile with a source, or call setAssetSource in another hook.`
 								});
 							} catch (err) {
 								setAssetSourceErr = err;
